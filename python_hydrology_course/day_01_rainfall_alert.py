@@ -7,7 +7,7 @@
 station_id = "RIDF_2089"
 station_name = "Mandya District Rain Gauge"
 date = "2025-04-05"
-rainfall_24hr_mm = 142.3  # High monsoon rainfall
+rainfall_24hr_mm = 160  # High monsoon rainfall
 latitude = 12.5198
 longitude = 76.8546
 
@@ -40,3 +40,13 @@ else:
     print("➡️  Action: No immediate action needed")
 
 print("=" * 45)
+
+duration_hours = 12  # Assume peak 12-hour burst
+intensity = rainfall_24hr_mm / duration_hours
+print(f"Peak Intensity    : {intensity:.2f} mm/hr")
+
+# Save report to file
+with open("rainfall_alert_today.txt", "w") as f:
+    f.write(f"Station: {station_name}\n")
+    f.write(f"Rainfall: {rainfall_24hr_mm} mm\n")
+    f.write(f"Status: {'FLOOD WARNING' if rainfall_24hr_mm >= 150 else 'WATCH' if rainfall_24hr_mm >= 100 else 'NORMAL'}\n")
