@@ -35,11 +35,14 @@ rainfalls = glob(folder_glob_key)
 for day, rainfall in enumerate(rainfalls):
     # Load as QgsRasterLayer
     rlayer = QgsRasterLayer(rainfall, 'rainfall')
+    if not rlayer.isValid():
+        print(f"Failed to load {rainfall}")
+        continue
 
     # Apply a color ramp
     fcn = QgsColorRampShader()
     fcn.setColorRampType(QgsColorRampShader.Interpolated)
-    lst = [ QgsColorRampShader.ColorRampItem(0, QColor(0,0,0)),
+    lst = [ QgsColorRampShader.ColorRampItem(0, QColor(0,0,0,0)),
         QgsColorRampShader.ColorRampItem(10, QColor(102,255,178)),
         QgsColorRampShader.ColorRampItem(1000, QColor(255,178,102)),
         ]
@@ -59,10 +62,11 @@ for day, rainfall in enumerate(rainfalls):
     job = QgsMapRendererParallelJob(ms)
     job.start()
     job.waitForFinished()
-
     img = job.renderedImage()
+
     save_folder_name = r"C:\Users\richmond\Downloads\testing\results\rainfall_day13"
-    fname = os.path.join(save_folder_name,f"day_{day}.png")
+    os.makedirs(save_folder_name, exist_ok=True)
+    fname = os.path.join(save_folder_name,f"day_{day+1}.png")
     img.save(fname)
 
 # exit QGIS
