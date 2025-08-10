@@ -15,9 +15,15 @@ class WatershedDelineation:
         self.min_size = min_size
         self.outlet = self.wbe.read_vector(outlet)
 
+        # Define temporary WBT working directory
+        # self.wbt_tmpdir = tempfile.TemporaryDirectory()
+        # self.wbe.working_directory = self.wbt_tmpdir.name
+
         # Run analysis and store results
         self.terrain_analysis_results = self.terrain_analysis()
         self.watershed_characterization_results = self.watershed_characterization()
+
+        # self.wbt_tmpdir.cleanup
 
     def terrain_analysis(self):
         # Filled depression
@@ -65,11 +71,23 @@ class WatershedDelineation:
         # Determine longest flow path
         longest_flowpath = self.wbe.longest_flowpath(self.terrain_analysis_results['filled_dem'], 
                                                      self.terrain_analysis_results['basin'])
-        # Compute basin averaged slope -- based on longest flow path / dH
+        # Get flow length
+        flow_length = longest_flowpath.get_attribute_value(record_index=4,
+                                                         field_name='LENGTH')
+        flow_length = flow_length.get_as_string()
+
+        # Compute basin averaged slope
+        ave_slope = longest_flowpath.get_attribute_value(record_index=5,
+                                                         field_name='AVG_SLOPE')
+        ave_slope = ave_slope.get_as_string()
+
         # Area-Weighted Curve Number
+
         # Compute lag time (SCS)
         return {
-            'longest_flowpath' : longest_flowpath
+            'longest_flowpath' : longest_flowpath,
+            # 'flow_length' : flow_length,
+            'ave_slope' : ave_slope
         }
     
     def plot_results(self, ax=None):
@@ -94,7 +112,7 @@ class WatershedDelineation:
                                             zorder = 4
                                             )
         show(self.terrain_analysis_results['snapped_point'], ax=ax, 
-                                            color='red', 
+                                            color='blue', 
                                             label='Snapped Outlet', 
                                             marker='^', 
                                             s=43, 
@@ -126,10 +144,13 @@ with tempfile.TemporaryDirectory() as tmpdir:
         # Run delineation
         try:
             ws = WatershedDelineation(raster, shp_tmp_path, min_size=10000)
-            ws.plot_results(ax=axes[idx])
+            print(f'Basin average slope: {ws.watershed_characterization_results['ave_slope']} , in decimal.')
+            # ws.plot_results(ax=axes[idx])
         except Exception as e:
             print(f"Failed on outlet {idx}: {e}")
 
 plt.tight_layout()
 plt.show()
+
+
 
