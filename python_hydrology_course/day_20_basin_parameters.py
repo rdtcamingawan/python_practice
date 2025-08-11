@@ -65,6 +65,12 @@ class WatershedDelineation:
         Computes and plots the subbasins within a given watershed.
         """
         return None
+    
+    def curve_number_generator(self):
+        """
+        Intersects the land cover with the soil layer.
+        From the intersections, assign a curve number (CN) from a look-up table.
+        """
 
 
     def watershed_characterization(self):
@@ -72,21 +78,22 @@ class WatershedDelineation:
         longest_flowpath = self.wbe.longest_flowpath(self.terrain_analysis_results['filled_dem'], 
                                                      self.terrain_analysis_results['basin'])
         # Get flow length
-        flow_length = longest_flowpath.get_attribute_value(record_index=4,
+        flow_length = longest_flowpath.get_attribute_value(record_index=0,
                                                          field_name='LENGTH')
-        flow_length = flow_length.get_as_string()
+        flow_length = flow_length.get_value_as_f64()
 
         # Compute basin averaged slope
-        ave_slope = longest_flowpath.get_attribute_value(record_index=5,
+        ave_slope = longest_flowpath.get_attribute_value(record_index=0,
                                                          field_name='AVG_SLOPE')
-        ave_slope = ave_slope.get_as_string()
+        ave_slope = ave_slope.get_value_as_f64()
 
         # Area-Weighted Curve Number
 
         # Compute lag time (SCS)
+
         return {
             'longest_flowpath' : longest_flowpath,
-            # 'flow_length' : flow_length,
+            'flow_length' : flow_length,
             'ave_slope' : ave_slope
         }
     
@@ -145,7 +152,7 @@ with tempfile.TemporaryDirectory() as tmpdir:
         try:
             ws = WatershedDelineation(raster, shp_tmp_path, min_size=10000)
             print(f'Basin average slope: {ws.watershed_characterization_results['ave_slope']} , in decimal.')
-            # ws.plot_results(ax=axes[idx])
+            ws.plot_results(ax=axes[idx])
         except Exception as e:
             print(f"Failed on outlet {idx}: {e}")
 
