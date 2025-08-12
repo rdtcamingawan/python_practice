@@ -5,27 +5,103 @@ import matplotlib.pyplot as plt
 import tempfile
 import os
 
+class CurveNumberLookUp:
+    def __init__(self):
+        self.cn_look_up =  {
+            "Built-up": {
+                "Clay Loam": 98,
+                "Sandy Clay Loam": 98,
+                "Silty Clay Loam": 98,
+                "Undifferentiated": 98
+            },
+            "Brush/Shrubs": {
+                "Clay Loam": 86,
+                "Sandy Clay Loam": 82,
+                "Silty Clay Loam": 82,
+                "Undifferentiated": 86
+            },
+            "Open/Barren": {
+                "Clay Loam": 94,
+                "Sandy Clay Loam": 91,
+                "Silty Clay Loam": 91,
+                "Undifferentiated": 94
+            },
+            "Inland Water": {
+                "Clay Loam": 98,
+                "Sandy Clay Loam": 98,
+                "Silty Clay Loam": 98,
+                "Undifferentiated": 98
+            },
+            "Annual Crop": {
+                "Clay Loam": 91,
+                "Sandy Clay Loam": 88,
+                "Silty Clay Loam": 88,
+                "Undifferentiated": 91
+            },
+            "Grassland": {
+                "Clay Loam": 88,
+                "Sandy Clay Loam": 83,
+                "Silty Clay Loam": 83,
+                "Undifferentiated": 88
+            },
+            "Closed Forest": {
+                "Clay Loam": 87,
+                "Sandy Clay Loam": 83,
+                "Silty Clay Loam": 83,
+                "Undifferentiated": 87
+            },
+            "Perennial Crop": {
+                "Clay Loam": 89,
+                "Sandy Clay Loam": 84,
+                "Silty Clay Loam": 84,
+                "Undifferentiated": 89
+            },
+            "Open Forest": {
+                "Clay Loam": 86,
+                "Sandy Clay Loam": 82,
+                "Silty Clay Loam": 82,
+                "Undifferentiated": 86
+            }
+        }
+
+    def get_cn_value(self, land_cover, soil_layer):
+        """
+        Returns value fo curve number for a defined CN Look Up table
+        Throws back an error if land cover / soil layer does not exists in the table
+        """
+        try:
+            return int(self.cn_look_up[land_cover][soil_layer])
+        except KeyError:
+            print(f"Warning: Soil type '{soil_layer}' not found for land cover '{land_cover}'. Assigning default CN = 30.")
+            return int(30)     
+
+
 class WatershedDelineation:
-    def __init__(self, raster , outlet, min_size):
+    def __init__(self):
+        # Intitialize variable
+        self.min_size = None
+        self.raster = None
+        self.outlet = None
+        self.land_cover = None
+        self.lc_layer_name = None
+        self.soil_layer = None
+        self.sl_layer_name = None
+        self.terrain_analysis_results = None
+        self.watershed_characterization_results = None
+
         # Intialize WbEnvironment
         self.wbe = WbEnvironment()
 
+    def load_data(self, raster, outlet, min_size=10000):
         # Define object
-        self.raster = self.wbe.read_raster(raster)
         self.min_size = min_size
+        self.raster = self.wbe.read_raster(raster)
         self.outlet = self.wbe.read_vector(outlet)
 
-        # Define temporary WBT working directory
-        # self.wbt_tmpdir = tempfile.TemporaryDirectory()
-        # self.wbe.working_directory = self.wbt_tmpdir.name
-
-        # Run analysis and store results
-        self.terrain_analysis_results = self.terrain_analysis()
-        self.watershed_characterization_results = self.watershed_characterization()
-
-        # self.wbt_tmpdir.cleanup
-
     def terrain_analysis(self):
+        """
+        This prepares the DEM for any hydrologic anlaysis
+        """
         # Filled depression
         # filled_dem = self.wbe.fill_depressions(self.raster)
         filled_dem = self.wbe.breach_depressions_least_cost(self.raster)
@@ -45,19 +121,28 @@ class WatershedDelineation:
                                                          streams,
                                                          snap_dist = 10
                                                          )
-
+        return {
+                'filled_dem': filled_dem,
+                'd8_flow_direction' : d8_flow_direction,
+                'snapped_point' : snapped_point,
+                'streams_vec' : streams_vec,
+                'snapped_point' : snapped_point
+                    }
+    
+    def delineate_watershed(self):
+        """
+        This function delineates the watershed based on prepared DEM 
+        and vectorizes the basin itself
+        """
         # Watershed delineation
-        basin = self.wbe.watershed(d8_pointer = d8_flow_direction,
-                                   pour_points = snapped_point
+        basin = self.wbe.watershed(d8_pointer = self.terrain_analysis['d8_flow_direction'],
+                                   pour_points = self.terrain_analysis['snapped_point']
                                    )
         basin_vec = self.wbe.raster_to_vector_polygons(basin)
 
         return {
-                'filled_dem' : filled_dem,
                 'basin' : basin,
                 'basin_vec' : basin_vec,
-                'streams_vec' : streams_vec,
-                'snapped_point' : snapped_point
                     }
     
     def subbasins(self):
@@ -66,11 +151,24 @@ class WatershedDelineation:
         """
         return None
     
-    def curve_number_generator(self):
+    def get_cn_value(self, land_cover, lc_layer_name, soil_layer, sl_layer_name):
         """
         Intersects the land cover with the soil layer.
         From the intersections, assign a curve number (CN) from a look-up table.
         """
+        # Sets layer name for reading file
+        self.lc_layer_name = lc_layer_name
+        self.sl_layer_name = sl_layer_name
+
+        # Read filepaths -- only accepts SHP files
+        self.land_cover = gpd.read_file(land_cover, layer=self.lc_layer_name)
+        self.soil_layer = gpd.read_file(soil_layer, layer=self.sl_layer_name)
+
+        # Intersect layers
+        intersected = land_cover.sjoin(soil_layer)
+        intersected['curve_number'] = intersected.apply(lambda x: fx.get_cn_value(land_cover=x['class_name'], soil_layer=x['type']), axis=1)
+
+        return intersected
 
 
     def watershed_characterization(self):
@@ -131,33 +229,34 @@ class WatershedDelineation:
 
 
 # File paths
-raster = r"C:\Users\richmond\Downloads\testing\data\IfSAR Clipped 05.05.25.tif"
-outlets = r"C:\Users\richmond\Downloads\testing\data\shps\amacan_outlets.shp"
-with tempfile.TemporaryDirectory() as tmpdir:
-    shp_tmp_path = os.path.join(tmpdir, 'point.shp')
-    print(shp_tmp_path)
+# raster = r"C:\Users\richmond\Downloads\testing\data\IfSAR Clipped 05.05.25.tif"
+# outlets = r"C:\Users\richmond\Downloads\testing\data\shps\amacan_outlets.shp"
+# with tempfile.TemporaryDirectory() as tmpdir:
+#     shp_tmp_path = os.path.join(tmpdir, 'point.shp')
+#     print(shp_tmp_path)
 
-    # Read outlet to GeoDataFram
-    gdf = gpd.read_file(outlets)
+#     # Read outlet to GeoDataFram
+#     gdf = gpd.read_file(outlets)
 
-    fig, axes = plt.subplots(1, 2, figsize=(12, 10))  # 2x2 grid
-    axes = axes.flatten()  # Convert 2x2 array to [ax0, ax1, ax2, ax3]
+#     fig, axes = plt.subplots(1, 2, figsize=(12, 10))  # 2x2 grid
+#     axes = axes.flatten()  # Convert 2x2 array to [ax0, ax1, ax2, ax3]
 
-    for idx, row in gdf.iterrows():
-        ax = axes[idx]
-        point = gpd.GeoDataFrame([row], geometry='geometry', crs= gdf.crs)
-        point.to_file(shp_tmp_path)
+#     for idx, row in gdf.iterrows():
+#         ax = axes[idx]
+#         point = gpd.GeoDataFrame([row], geometry='geometry', crs= gdf.crs)
+#         point.to_file(shp_tmp_path)
 
-        # Run delineation
-        try:
-            ws = WatershedDelineation(raster, shp_tmp_path, min_size=10000)
-            print(f'Basin average slope: {ws.watershed_characterization_results['ave_slope']} , in decimal.')
-            ws.plot_results(ax=axes[idx])
-        except Exception as e:
-            print(f"Failed on outlet {idx}: {e}")
+#         # Run delineation
+#         try:
+#             ws = WatershedDelineation(raster, shp_tmp_path, min_size=10000)
+#             print(f'Basin average slope: {ws.watershed_characterization_results['ave_slope']} , in decimal.')
+#             ws.plot_results(ax=axes[idx])
+#         except Exception as e:
+#             print(f"Failed on outlet {idx}: {e}")
 
-plt.tight_layout()
-plt.show()
+# plt.tight_layout()
+# plt.show()
+
 
 
 
