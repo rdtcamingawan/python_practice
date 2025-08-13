@@ -78,7 +78,8 @@ class CurveNumberLookUp:
 
 class WatershedDelineation:
     def __init__(self):
-        # Intitialize variable
+        # Initialize variable
+        self.cn_lookup = CurveNumberLookUp()
         self.min_size = None
         self.raster = None
         self.outlet = None
@@ -89,8 +90,13 @@ class WatershedDelineation:
         self.terrain_analysis_results = None
         self.watershed_characterization_results = None
 
-        # Intialize WbEnvironment
+        # Initialize Temporaty Working Directory
+        self.working_directory = tempfile.TemporaryDirectory()
+
+        # Initialize WbEnvironment
         self.wbe = WbEnvironment()
+        self.wbe.working_directory = self.working_directory.name
+        
 
     def load_data(self, raster, outlet, min_size=10000):
         # Define object
@@ -139,6 +145,7 @@ class WatershedDelineation:
                                    pour_points = self.terrain_analysis['snapped_point']
                                    )
         basin_vec = self.wbe.raster_to_vector_polygons(basin)
+        self.wbe.write_vector(basin_vec, 'basin_vec.shp')
 
         return {
                 'basin' : basin,
@@ -151,25 +158,48 @@ class WatershedDelineation:
         """
         return None
     
-    def get_cn_value(self, land_cover, lc_layer_name, soil_layer, sl_layer_name):
+    def assign_cn_value(self, land_cover, lc_layer_name, soil_layer, sl_layer_name):
         """
+        Clip the land cover and soil layer to the basin file
         Intersects the land cover with the soil layer.
         From the intersections, assign a curve number (CN) from a look-up table.
         """
         # Sets layer name for reading file
         self.lc_layer_name = lc_layer_name
         self.sl_layer_name = sl_layer_name
+        basic_vec_path = os.path.join(self.working_directory, 'basin_vec.shp')
 
         # Read filepaths -- only accepts SHP files
-        self.land_cover = gpd.read_file(land_cover, layer=self.lc_layer_name)
-        self.soil_layer = gpd.read_file(soil_layer, layer=self.sl_layer_name)
+        crs = 'EPSG:32651'
+        land_cover = gpd.read_file(land_cover, layer=self.lc_layer_name).to_crs(crs=crs)
+        soil_layer = gpd.read_file(soil_layer, layer=self.sl_layer_name).to_crs(crs=crs)
+        basic_vec = gpd.read_file(basic_vec).to_crs(crs=crs) # Read basin vector file
+
+        # Clip land cover and soil layer
+        land_cover = gpd.clip(land_cover, basic_vec, keep_geom_type=True)
+        clip_soil_layer = gpd.clip(soil_layer, basic_vec, keep_geom_type=True)
 
         # Intersect layers
-        intersected = land_cover.sjoin(soil_layer)
-        intersected['curve_number'] = intersected.apply(lambda x: fx.get_cn_value(land_cover=x['class_name'], soil_layer=x['type']), axis=1)
+        self.intersected = land_cover.sjoin(soil_layer)
+        self.intersected['curve_number'] = self.intersected.apply(lambda x: self.cn_lookup.get_cn_value(land_cover=x['class_name'], soil_layer=x['type']), axis=1)
 
-        return intersected
+        return self.intersected
 
+    def compute_weighted_cn(self):
+        """
+        Computes the weighted curve number
+        """
+        self.layer = self.intersected
+
+        # Compute the area in sq.m
+        area = self.layer.geometry.area
+        self.layer['wt_cn'] = area * self.layer['curve_number'] 
+        weighted_cn = self.layer['wt_cn'].sum() / area.sum()
+
+        return weighted_cn
+    
+    def scs_lag(self):
+        
 
     def watershed_characterization(self):
         # Determine longest flow path
@@ -226,36 +256,45 @@ class WatershedDelineation:
         ax.set_title("Watershed Delineation")
         ax.legend()
         return ax
+    
+    def close(self):
+        self.working_directory.cleanup()
 
 
 # File paths
-# raster = r"C:\Users\richmond\Downloads\testing\data\IfSAR Clipped 05.05.25.tif"
-# outlets = r"C:\Users\richmond\Downloads\testing\data\shps\amacan_outlets.shp"
-# with tempfile.TemporaryDirectory() as tmpdir:
-#     shp_tmp_path = os.path.join(tmpdir, 'point.shp')
-#     print(shp_tmp_path)
+raster = r"C:\Users\richmond\Downloads\testing\data\IfSAR Clipped 05.05.25.tif"
+outlets = r"C:\Users\richmond\Downloads\testing\data\shps\amacan_outlets.shp"
+with tempfile.TemporaryDirectory() as tmpdir:
+    shp_tmp_path = os.path.join(tmpdir, 'point.shp')
+    print(shp_tmp_path)
 
-#     # Read outlet to GeoDataFram
-#     gdf = gpd.read_file(outlets)
+    # Read outlet to GeoDataFram
+    gdf = gpd.read_file(outlets)
 
-#     fig, axes = plt.subplots(1, 2, figsize=(12, 10))  # 2x2 grid
-#     axes = axes.flatten()  # Convert 2x2 array to [ax0, ax1, ax2, ax3]
+    fig, axes = plt.subplots(1, 2, figsize=(12, 10))  # 2x2 grid
+    axes = axes.flatten()  # Convert 2x2 array to [ax0, ax1, ax2, ax3]
 
-#     for idx, row in gdf.iterrows():
-#         ax = axes[idx]
-#         point = gpd.GeoDataFrame([row], geometry='geometry', crs= gdf.crs)
-#         point.to_file(shp_tmp_path)
+    for idx, row in gdf.iterrows():
+        ax = axes[idx]
+        point = gpd.GeoDataFrame([row], geometry='geometry', crs= gdf.crs)
+        point.to_file(shp_tmp_path)
 
-#         # Run delineation
-#         try:
-#             ws = WatershedDelineation(raster, shp_tmp_path, min_size=10000)
+        # Run delineation
+        try:
+            ws = WatershedDelineation()
+            ws.load_data(raster, shp_tmp_path, min_size=10000)
+            ws.terrain_analysis()
+            basin_vec = ws.delineate_watershed()
+            print(basin_vec)
+            # show(basin_vec)
 #             print(f'Basin average slope: {ws.watershed_characterization_results['ave_slope']} , in decimal.')
 #             ws.plot_results(ax=axes[idx])
-#         except Exception as e:
-#             print(f"Failed on outlet {idx}: {e}")
+        except Exception as e:
+            print(f"Failed on outlet {idx}: {e}")
 
-# plt.tight_layout()
-# plt.show()
+plt.tight_layout()
+plt.show()
+
 
 
 
