@@ -196,10 +196,7 @@ class WatershedDelineation:
         self.layer['wt_cn'] = area * self.layer['curve_number'] 
         weighted_cn = self.layer['wt_cn'].sum() / area.sum()
 
-        return weighted_cn
-    
-    def scs_lag(self):
-        
+        return weighted_cn        
 
     def watershed_characterization(self):
         # Determine longest flow path
@@ -224,6 +221,14 @@ class WatershedDelineation:
             'flow_length' : flow_length,
             'ave_slope' : ave_slope
         }
+    
+    def scs_lag(self):
+        flow_length = self.watershed_characterization()['flow_length']
+        ave_slope = self.watershed_characterization()['ave_slope']
+        cn_value = self.compute_weighted_cn()
+        lag_time = (((flow_length*1000)**0.8) * ((1000/cn_value)-9)**0.7) / (1900 * (ave_slope**0.5))
+
+        return lag_time
     
     def plot_results(self, ax=None):
         if ax is None:
